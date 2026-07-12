@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 260px;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #fff;
+    }
+    h3 {
+      font-size: 13px;
+      color: #333;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #9E9E9E;
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    .dot.active { background: #4CAF50; }
+    .btn-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    button {
+      flex: 1;
+      padding: 8px 0;
+      font-size: 13px;
+      font-weight: 600;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    button:disabled { opacity: 0.35; cursor: default; }
+    #start-btn { background: #1565C0; color: #fff; }
+    #stop-btn  { background: #C62828; color: #fff; }
+    .count-row {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+    .count {
+      font-size: 36px;
+      font-weight: 700;
+      color: #1565C0;
+      line-height: 1;
+    }
+    .count.alert { color: #C62828; }
+    .label { font-size: 12px; color: #777; }
+    .last-checked { font-size: 11px; color: #aaa; margin-bottom: 14px; }
+    .filter-box {
+      background: #f5f6f8;
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 11px;
+      color: #555;
+      line-height: 1.5;
+    }
+    .filter-box .fk { color: #999; }
+    .filter-box .fv { color: #1565C0; font-weight: 600; }
+    .options-link {
+      display: block;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid #eee;
+      font-size: 12px;
+      color: #1565C0;
+      text-decoration: none;
+      cursor: pointer;
+      background: none;
+      border: none;
+      padding-left: 0;
+      width: auto;
+      flex: 0;
+    }
+    .options-link:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <h3><span class="dot" id="dot"></span>ClearCap Order Monitor</h3>
+
+  <div class="btn-row">
+    <button id="start-btn">Start</button>
+    <button id="stop-btn" disabled>Stop</button>
+  </div>
+
+  <div class="count-row">
+    <span class="count" id="count">–</span>
+    <span class="label" id="label"></span>
+  </div>
+  <div class="last-checked" id="last-checked"></div>
+
+  <div class="filter-box">
+    Alarm only — auto-accept not enabled yet for Clear Capital.
+  </div>
+
+  <button class="options-link" id="options-link">Open Settings & Logs →</button>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>ClearCap Order Monitor — Settings</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f5f6f8;
+      color: #1a1a1a;
+      padding: 32px 24px;
+      min-height: 100vh;
+    }
+    .container { max-width: 1200px; margin: 0 auto; }
+    h1 { font-size: 22px; font-weight: 700; margin-bottom: 24px; color: #1a1a1a; }
+    .card {
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      padding: 20px 24px;
+      margin-bottom: 20px;
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    h2 { font-size: 15px; font-weight: 600; color: #333; }
+    .clear-btn {
+      font-size: 12px;
+      color: #C62828;
+      background: none;
+      border: 1px solid #C62828;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .clear-btn:hover { background: #C62828; color: #fff; }
+    .download-btn {
+      font-size: 12px;
+      color: #2E7D32;
+      background: none;
+      border: 1px solid #2E7D32;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .download-btn:hover { background: #2E7D32; color: #fff; }
+    .pager {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .pg-btn {
+      font-size: 12px;
+      color: #1565C0;
+      background: #fff;
+      border: 1px solid #1565C0;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .pg-btn:hover:not(:disabled) { background: #1565C0; color: #fff; }
+    .pg-btn:disabled { color: #bbb; border-color: #ddd; cursor: default; }
+    .pg-info { font-size: 12px; color: #666; }
+    .log-empty {
+      color: #999;
+      font-size: 13px;
+      padding: 24px 0;
+      text-align: center;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th {
+      text-align: left;
+      padding: 10px 12px;
+      background: #fafafa;
+      color: #666;
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      border-bottom: 1px solid #e5e5e5;
+    }
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    tr:last-child td { border-bottom: none; }
+    .appr-id { font-weight: 600; color: #1565C0; text-decoration: none; }
+    a.appr-id:hover { text-decoration: underline; }
+    .status-badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .status-badge.success     { background: #E8F5E9; color: #2E7D32; }
+    .status-badge.fail        { background: #FFEBEE; color: #C62828; }
+    .status-badge.unavailable { background: #FFF3E0; color: #E65100; }
+    .status-badge.skipped     { background: #ECEFF1; color: #546E7A; }
+    .url-cell {
+      max-width: 320px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: #666;
+      font-size: 12px;
+    }
+    .url-cell a { color: #1565C0; text-decoration: none; }
+    .url-cell a:hover { text-decoration: underline; }
+    .time-cell { color: #777; font-size: 12px; white-space: nowrap; }
+    details.diag summary {
+      cursor: pointer;
+      color: #1565C0;
+      font-size: 12px;
+      user-select: none;
+    }
+    details.diag summary:hover { text-decoration: underline; }
+    .diag-pre {
+      margin-top: 8px;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 11px;
+      line-height: 1.5;
+      padding: 12px;
+      border-radius: 6px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 360px;
+      overflow: auto;
+    }
+    .diag-pre .k { color: #569cd6; }
+    .stats {
+      display: flex;
+      gap: 32px;
+      margin-bottom: 20px;
+    }
+    .stat { display: flex; flex-direction: column; gap: 4px; }
+    .stat-num { font-size: 28px; font-weight: 700; color: #1565C0; line-height: 1; }
+    .stat-num.fail { color: #C62828; }
+    .stat-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.4px; }
+    .placeholder {
+      font-size: 13px;
+      color: #888;
+      padding: 12px 0;
+    }
+    .form-group { margin-bottom: 12px; }
+    .form-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 8px;
+    }
+    .form-help {
+      font-size: 12px;
+      color: #888;
+      margin-top: 6px;
+    }
+    .radio-row {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .radio-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: #333;
+      cursor: pointer;
+      padding: 6px 10px;
+      border-radius: 6px;
+      transition: background 0.15s;
+    }
+    .radio-option:hover { background: #f5f6f8; }
+    .radio-option input { cursor: pointer; }
+    .settings-fab {
+      position: fixed;
+      right: 24px;
+      bottom: 24px;
+      background: #1565C0;
+      color: #fff;
+      padding: 12px 18px;
+      border-radius: 24px;
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    .settings-fab:hover { background: #0d47a1; }
+    .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+    .header-row h1 { margin-bottom: 0; }
+    .settings-link {
+      background: #1565C0; color: #fff; padding: 8px 16px; border-radius: 6px;
+      font-size: 13px; font-weight: 600; text-decoration: none;
+    }
+    .settings-link:hover { background: #0d47a1; }
+    .heartbeat-link { font-size: 13px; color: #1565C0; text-decoration: none; font-weight: 600; }
+    .heartbeat-link:hover { text-decoration: underline; }
+    .filter-warning {
+      background: #FFF3CD;
+      border: 1px solid #E0A800;
+      color: #856404;
+      border-radius: 10px;
+      padding: 14px 20px;
+      margin-bottom: 20px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .filter-warning a { color: #856404; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header-row">
+      <h1>ClearCap Order Monitor</h1>
+      <a href="settings.html" class="settings-link">⚙ Settings</a>
+    </div>
+
+    <div id="filter-warning" class="filter-warning" style="display:none;"></div>
+
+    <div class="card">
+      <div class="card-header">
+        <h2>Stats</h2>
+        <span id="last-heartbeat" class="heartbeat-link" title="Monitor heartbeat">No heartbeats yet.</span>
+      </div>
+      <div class="stats">
+        <div class="stat"><span class="stat-num" id="stat-total">0</span><span class="stat-label">Total Attempts</span></div>
+        <div class="stat"><span class="stat-num" id="stat-success">0</span><span class="stat-label">Accepted</span></div>
+        <div class="stat"><span class="stat-num" id="stat-unavail" style="color:#E65100">0</span><span class="stat-label">Already Taken</span></div>
+        <div class="stat"><span class="stat-num fail" id="stat-fail">0</span><span class="stat-label">Failed</span></div>
+        <div class="stat"><span class="stat-num" id="stat-skipped" style="color:#546E7A">0</span><span class="stat-label">Skipped (coin)</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-bottom: 16px;">Daily Summary</h2>
+      <div id="daily-summary-container">
+        <div class="log-empty">No data yet.</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h2>Accepted Orders</h2>
+        <div style="display:flex; gap:8px;">
+          <button class="download-btn" id="download-btn">⬇ Download CSV</button>
+          <button class="clear-btn" id="clear-btn">Clear Log</button>
+        </div>
+      </div>
+      <div id="log-container">
+        <div class="log-empty">No orders accepted yet.</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h2>Detections (Audio Alerts)</h2>
+        <button class="clear-btn" id="clear-detections-btn">Clear Log</button>
+      </div>
+      <div id="detections-container">
+        <div class="log-empty">No detections yet.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <a href="settings.html" class="settings-fab" title="Settings">⚙ Settings</a>
+
+  <script src="options.js"></script>
+</body>
+</html>
