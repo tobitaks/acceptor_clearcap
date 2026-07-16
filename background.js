@@ -1,25 +1,27 @@
-// ClearCap background service worker (ALARM phase).
+// ClearCap background service worker.
 //
-// Detection + alarm live in content.js (it polls the getAvailableOffers JSON and
-// plays the alarm). This worker owns: audio routing (offscreen), START/STOP, the
-// monitored-tab lifecycle, detection logging, and the daily-accept-limit +
-// batched-accept machinery — which is DORMANT until acceptOrder() below is filled.
+// Detection + auto-quote both run in content.js (the quote POST needs the page's
+// XSRF cookie, which a service worker can't read). This worker owns: audio
+// routing (offscreen), START/STOP, the monitored-tab lifecycle, and logging.
 const DASHBOARD_URL = 'https://secure.clearcapital.com/secure/broker/#/available';
 
-const attemptedIds = new Set();
+// Default rate table (from initial-table-rate.csv) — seeded on first install.
+importScripts('default-rates.js'); // defines DEFAULT_RATES
 
-// ============================================================================
-// ACCEPT — NOT YET IMPLEMENTED.
-// We don't have the accept request yet (URL + method + payload). Capture it from
-// a live "Available" order (Network tab: URL, Method, Payload) or the broker JS
-// bundle, then implement acceptOrder() to POST/GET it and return the outcome.
-// content.js does NOT send AUTO_ACCEPT_IDS yet, so this never runs until wired.
-// ============================================================================
-async function acceptOrder(order) {
-  throw new Error('[ClearCap bg] accept not implemented — capture the accept request first');
-}
+// Seed the rate table on fresh install only, and only if it's still empty (never
+// clobber the user's own edits on an extension update/reload).
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details.reason !== 'install') return;
+  chrome.storage.local.get('quoteRates', ({ quoteRates }) => {
+    if (!Array.isArray(quoteRates) || quoteRates.length === 0) {
+      chrome.storage.local.set({ quoteRates: DEFAULT_RATES });
+      console.log(`[ClearCap bg] seeded ${DEFAULT_RATES.length} default rate rows`);
+    }
+  });
+});
 
-async function logAccepted(entry) {
+async function logQuote(entry) {
+  if (!entry) return;
   const { acceptedLog = [] } = await chrome.storage.local.get('acceptedLog');
   acceptedLog.unshift(entry);
   if (acceptedLog.length > 500) acceptedLog.length = 500;
@@ -94,91 +96,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     logDetection({
       count: msg.count,
       orders: msg.orders || [],
-      filtered: msg.filtered || [],
       timestamp: new Date().toISOString()
     });
   }
 
-  if (msg.type === 'AUTO_ACCEPT_IDS') {
-    // Dormant until acceptOrder() is implemented + content.js sends this.
-    const list = Array.isArray(msg.orders) ? msg.orders : [];
-    runBatchedAccepts(list, 10);
+  if (msg.type === 'LOG_QUOTE') {
+    logQuote(msg.entry);
   }
 });
-
-// Count of SUCCESSFUL accepts logged today (local calendar day). Source of truth
-// is acceptedLog — recomputed each call so it survives service-worker restarts.
-function localYMD(ts) {
-  const d = new Date(ts);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-async function acceptsToday() {
-  const { acceptedLog = [] } = await chrome.storage.local.get('acceptedLog');
-  const today = localYMD(new Date().toISOString());
-  return acceptedLog.filter(e => e.outcome === 'accepted' && e.timestamp && localYMD(e.timestamp) === today).length;
-}
-
-// Stop monitoring: close the monitored tab (kills the poll loop → session goes
-// idle) and clear monitorState. Mirrors the STOP handler; onRemoved also resets.
-function stopMonitoring(reason) {
-  chrome.storage.local.get('monitorState', ({ monitorState }) => {
-    if (monitorState?.tabId) {
-      chrome.tabs.remove(monitorState.tabId, () => void chrome.runtime.lastError);
-    }
-    chrome.storage.local.set({
-      monitorState: { monitoring: false, tabId: null, count: 0, lastChecked: null }
-    });
-    console.log(`[ClearCap bg] monitoring stopped — ${reason}`);
-  });
-}
-
-async function runBatchedAccepts(list, batchSize) {
-  // Daily accept cap (0/blank = unlimited). Trim the attempt list to the
-  // remaining budget BEFORE firing — successes ≤ attempts, so this can never
-  // overshoot the cap.
-  const { dailyAcceptLimit = 0 } = await chrome.storage.local.get('dailyAcceptLimit');
-  const limit = parseInt(dailyAcceptLimit, 10) || 0;
-
-  let work = list;
-  if (limit > 0) {
-    const already = await acceptsToday();
-    const remaining = limit - already;
-    if (remaining <= 0) {
-      console.log(`[ClearCap bg] daily accept limit ${limit} already reached (${already}) — skipping ${list.length} & stopping`);
-      stopMonitoring(`daily accept limit ${limit} reached`);
-      return;
-    }
-    if (list.length > remaining) {
-      console.log(`[ClearCap bg] trimming ${list.length} → ${remaining} to stay under daily limit ${limit}`);
-      work = list.slice(0, remaining);
-    }
-  }
-
-  console.log(`[ClearCap bg] accepting ${work.length} order(s) in batches of ${batchSize}`);
-  for (let i = 0; i < work.length; i += batchSize) {
-    const batch = work.slice(i, i + batchSize);
-    const batchNum = Math.floor(i / batchSize) + 1;
-    console.log(`[ClearCap bg] batch ${batchNum} firing ${batch.length} parallel`);
-    await Promise.allSettled(
-      batch.map(o =>
-        acceptOrder(o).catch(e => {
-          console.error(`[ClearCap bg] accept ${o.id} failed:`, e);
-          throw e;
-        })
-      )
-    );
-  }
-  console.log('[ClearCap bg] all batches complete');
-
-  // Hit the cap on successful accepts? Stop now.
-  if (limit > 0) {
-    const done = await acceptsToday();
-    if (done >= limit) {
-      console.log(`[ClearCap bg] daily accept limit reached (${done}/${limit}) — stopping`);
-      stopMonitoring(`daily accept limit ${limit} reached`);
-    }
-  }
-}
 
 // If user manually closes the monitored tab, reset state
 chrome.tabs.onRemoved.addListener((tabId) => {

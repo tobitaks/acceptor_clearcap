@@ -63,8 +63,38 @@
     </div>
 
     <div class="card">
-      <h2 style="margin-bottom: 8px;">Auto-accept</h2>
-      <p class="form-help">Not enabled yet for Clear Capital — this is the <strong>alarm-only</strong> build. Order-type / keyword / exclude filters and the daily accept limit return once the accept request is captured and wired.</p>
+      <h2 style="margin-bottom: 16px;">Quote rate table <span class="saved-note" id="saved-rates">Saved ✓</span></h2>
+      <div class="form-group">
+        <table style="width:100%; border-collapse:collapse; font-size:13px;">
+          <thead>
+            <tr>
+              <th style="text-align:left; padding:6px 8px; color:#666; font-size:11px; text-transform:uppercase; letter-spacing:.4px;">City</th>
+              <th style="text-align:left; padding:6px 8px; color:#666; font-size:11px; text-transform:uppercase; letter-spacing:.4px; width:110px;">Zip</th>
+              <th style="text-align:left; padding:6px 8px; color:#666; font-size:11px; text-transform:uppercase; letter-spacing:.4px; width:120px;">Exterior $</th>
+              <th style="text-align:left; padding:6px 8px; color:#666; font-size:11px; text-transform:uppercase; letter-spacing:.4px; width:120px;">Interior $</th>
+              <th style="width:36px;"></th>
+            </tr>
+          </thead>
+          <tbody id="rate-body"></tbody>
+        </table>
+        <div style="margin-top:12px; display:flex; gap:8px;">
+          <button id="add-rate" type="button"
+            style="font-size:13px; font-weight:600; color:#1565C0; background:#fff; border:1px solid #1565C0; padding:7px 14px; border-radius:6px; cursor:pointer;">+ Add row</button>
+          <button id="clear-rates" type="button"
+            style="font-size:13px; font-weight:600; color:#C62828; background:#fff; border:1px solid #C62828; padding:7px 14px; border-radius:6px; cursor:pointer;">Clear all</button>
+        </div>
+        <div id="rate-status" style="font-size:12px; margin-top:12px; color:#888;"></div>
+        <p class="form-help">One row per <strong>City + Zip</strong>. When a new order's city AND zip both match (case-insensitive), we auto-quote at the <strong>Exterior</strong> or <strong>Interior</strong> rate depending on the order type. <strong>No matching row, or a blank rate for that type → the order is skipped</strong> (alarm only, never quoted). Due Date = current due +48h, Quote Expires +24h, Reason "Standard rate". No rows = quoting disabled (pure alarm).</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-bottom: 16px;">Daily quote limit <span class="saved-note" id="saved-limit">Saved ✓</span></h2>
+      <div class="form-group">
+        <input type="number" id="daily-limit" min="0" step="1" placeholder="0 = unlimited"
+          style="width: 160px; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px;">
+        <p class="form-help">Stop after this many <strong>quotes submitted</strong> in a day (local time) — unpriced/skipped and failed do not count. When the limit is hit, the monitored tab is <strong>closed</strong> and polling stops — the session goes idle. <code>0</code> or blank = no limit. Resets at local midnight.</p>
+      </div>
     </div>
   </div>
 

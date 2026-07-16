@@ -4,7 +4,6 @@ const clearBtn           = document.getElementById('clear-btn');
 const clearDetectionsBtn = document.getElementById('clear-detections-btn');
 const statTotal    = document.getElementById('stat-total');
 const statSuccess  = document.getElementById('stat-success');
-const statUnavail  = document.getElementById('stat-unavail');
 const statFail     = document.getElementById('stat-fail');
 const statSkipped  = document.getElementById('stat-skipped');
 
@@ -68,19 +67,15 @@ function render(entries) {
   acceptedData = entries || [];
   const log = acceptedData;
 
-  // 'skipped' (coin-toss) entries are NOT accept attempts — exclude from total
-  const attempts = log.filter(e => e.outcome !== 'skipped');
+  // 'unpriced' entries were skipped (no rate) — not quote attempts, exclude from total.
+  const attempts = log.filter(e => e.outcome !== 'unpriced');
   statTotal.textContent   = attempts.length;
-  statSuccess.textContent = log.filter(e => e.outcome === 'accepted' || (e.success && !e.outcome)).length;
-  statUnavail.textContent = log.filter(e => e.outcome === 'unavailable').length;
-  statFail.textContent    = log.filter(e => {
-    if (e.outcome) return e.outcome === 'failed';
-    return !e.success;
-  }).length;
-  if (statSkipped) statSkipped.textContent = log.filter(e => e.outcome === 'skipped').length;
+  statSuccess.textContent = log.filter(e => e.outcome === 'quoted').length;
+  statFail.textContent    = log.filter(e => e.outcome === 'failed').length;
+  if (statSkipped) statSkipped.textContent = log.filter(e => e.outcome === 'unpriced').length;
 
   if (!log.length) {
-    logContainer.innerHTML = '<div class="log-empty">No orders accepted yet.</div>';
+    logContainer.innerHTML = '<div class="log-empty">No quotes yet.</div>';
     return;
   }
 
@@ -93,23 +88,24 @@ function render(entries) {
       month: 'short', day: 'numeric',
       hour: '2-digit', minute: '2-digit', second: '2-digit'
     });
-    const outcome = e.outcome || (e.success ? 'accepted' : 'failed');
+    const outcome = e.outcome || 'failed';
     const statusMap = {
-      accepted:    '<span class="status-badge success">Accepted</span>',
-      unavailable: '<span class="status-badge unavailable">Already Taken</span>',
-      failed:      '<span class="status-badge fail">Failed</span>',
-      skipped:     '<span class="status-badge skipped">Skipped (coin)</span>'
+      quoted:   '<span class="status-badge success">Quoted (pending)</span>',
+      failed:   '<span class="status-badge fail">Failed</span>',
+      unpriced: '<span class="status-badge skipped">Unpriced (skip)</span>'
     };
     const status = statusMap[outcome] || statusMap.failed;
     const id = e.id || e.apprId || '—';
     const address = e.address || '—';
+    const fee = (e.fee != null && e.fee !== '') ? `$${e.fee}` : '—';
+    const note = e.errorMessage ? `<div style="color:#C62828;font-size:11px">${escapeHtml(e.errorMessage)}</div>` : '';
     return `
       <tr>
-        <td><span class="appr-id">${id}</span></td>
-        <td>${address}</td>
-        <td>${status}</td>
+        <td><span class="appr-id">${escapeHtml(id)}</span></td>
+        <td>${escapeHtml(address)}</td>
+        <td>${fee}</td>
+        <td>${status}${note}</td>
         <td class="time-cell">${time}</td>
-        <td>${renderDiag(e.diag)}</td>
       </tr>
     `;
   }).join('');
@@ -120,9 +116,9 @@ function render(entries) {
         <tr>
           <th>Order ID</th>
           <th>Address</th>
+          <th>Quote</th>
           <th>Status</th>
           <th>Time</th>
-          <th>Diag</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -181,14 +177,14 @@ function dayLabel(ts) {
   return new Date(ts).toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
-// Per-day roll-up: Detected (from detectionLog.orders), and accept outcomes
+// Per-day roll-up: Detected (from detectionLog.orders), and quote outcomes
 // (from acceptedLog). Grouped by local calendar day, newest first.
 function renderDailySummary() {
   const c = document.getElementById('daily-summary-container');
-  const days = {}; // ymd -> { label, detected, accepted, taken, failed, skipped }
+  const days = {}; // ymd -> { label, detected, quoted, failed, unpriced }
   const get = (ts) => {
     const k = localYMD(ts);
-    if (!days[k]) days[k] = { label: dayLabel(ts), detected: 0, accepted: 0, taken: 0, failed: 0, skipped: 0 };
+    if (!days[k]) days[k] = { label: dayLabel(ts), detected: 0, quoted: 0, failed: 0, unpriced: 0 };
     return days[k];
   };
 
@@ -199,11 +195,10 @@ function renderDailySummary() {
   for (const e of acceptedData) {
     if (!e.timestamp) continue;
     const d = get(e.timestamp);
-    const outcome = e.outcome || (e.success ? 'accepted' : 'failed');
-    if (outcome === 'accepted')         d.accepted++;
-    else if (outcome === 'unavailable') d.taken++;
-    else if (outcome === 'skipped')     d.skipped++;
-    else                                d.failed++;
+    const outcome = e.outcome || 'failed';
+    if (outcome === 'quoted')        d.quoted++;
+    else if (outcome === 'unpriced') d.unpriced++;
+    else                             d.failed++;
   }
 
   const keys = Object.keys(days).sort().reverse();
@@ -217,10 +212,9 @@ function renderDailySummary() {
       <tr>
         <td><strong>${d.label}</strong></td>
         <td>${d.detected}</td>
-        <td style="color:#2E7D32;font-weight:600">${d.accepted}</td>
-        <td style="color:#E65100">${d.taken}</td>
+        <td style="color:#2E7D32;font-weight:600">${d.quoted}</td>
         <td style="color:#C62828">${d.failed}</td>
-        <td style="color:#546E7A">${d.skipped}</td>
+        <td style="color:#546E7A">${d.unpriced}</td>
       </tr>`;
   }).join('');
   c.innerHTML = `
@@ -229,10 +223,9 @@ function renderDailySummary() {
         <tr>
           <th>Date</th>
           <th>Detected</th>
-          <th>Accepted</th>
-          <th>Already Taken</th>
+          <th>Quoted</th>
           <th>Failed</th>
-          <th>Skipped (coin)</th>
+          <th>Unpriced</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -313,18 +306,19 @@ function csvCell(v) {
 }
 document.getElementById('download-btn').addEventListener('click', () => {
   const log = acceptedData || [];
-  if (!log.length) { alert('No accepted orders to download.'); return; }
-  const header = ['Order ID', 'Address', 'Form', 'Outcome', 'Timestamp'];
+  if (!log.length) { alert('No quotes to download.'); return; }
+  const header = ['Order ID', 'Address', 'City', 'Zip', 'Quote', 'Outcome', 'VendorBidID', 'Timestamp'];
   const lines = [header.join(',')];
   for (const e of log) {
-    const outcome = e.outcome || (e.success ? 'accepted' : 'failed');
-    lines.push([e.id || e.apprId || '', e.address || '', e.form || '', outcome, e.timestamp || ''].map(csvCell).join(','));
+    const outcome = e.outcome || 'failed';
+    lines.push([e.id || e.apprId || '', e.address || '', e.city || '', e.zip || '',
+                e.fee != null ? e.fee : '', outcome, e.vendorBidId || '', e.timestamp || ''].map(csvCell).join(','));
   }
   const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `accepted-orders-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `clearcap-quotes-${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 });
