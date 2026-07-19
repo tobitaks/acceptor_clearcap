@@ -98,7 +98,9 @@ function pollInterval() {
 }
 
 function playAlarm() {
-  chrome.runtime.sendMessage({ type: 'PLAY_AUDIO_ALERT' });
+  // Alarms disabled for ClearCap — it auto-quotes silently. Detection still logs
+  // (new orders + logged-out), just no audio. Call sites left in place so it's a
+  // one-line flip to re-enable: sendMessage({ type: 'PLAY_AUDIO_ALERT' }).
 }
 
 // Stable identity for an offer. SOLICITATION_ID is the offer instance (what a
@@ -310,14 +312,28 @@ async function checkOrders() {
       headers: { 'Accept': 'application/json' }
     });
 
-    // Distinguish "logged in, nothing available" ([]) from "session gone".
-    let data = null;
-    const ct = res.headers.get('content-type') || '';
-    if (res.ok && ct.includes('json')) {
-      try { data = await res.json(); } catch { data = null; }
-    }
-    const sessionLost = !Array.isArray(data);
-    const offers = Array.isArray(data) ? data : [];
+    // Parse the body REGARDLESS of content-type. Clear Capital serves the offers
+    // array with a non-JSON content-type (renders as a white/HTML page in DevTools),
+    // so gating on `content-type: json` wrongly discarded a valid 200 array and
+    // flagged us "logged out". Also use res.text() (honors the feed's ISO-8859-1
+    // charset) instead of res.json() (which forces UTF-8).
+    const text = res.ok ? await res.text() : '';
+    let parsed = null;
+    try { parsed = JSON.parse(text); } catch { /* not JSON — see sessionLost below */ }
+
+    // Accept a bare array OR a common object wrapper.
+    const offersData = Array.isArray(parsed) ? parsed
+                     : Array.isArray(parsed?.DATA)   ? parsed.DATA
+                     : Array.isArray(parsed?.offers) ? parsed.offers
+                     : null;
+
+    // "Logged out" ONLY on a real auth signal — never merely "couldn't parse an array".
+    const looksLikeLogin = !!text && /<html|<!doctype/i.test(text) && /log\s*in|sign\s*in|password/i.test(text);
+    const sessionLost = res.status === 401 || res.status === 403
+      || (res.redirected && /login|signin|default\.cfm/i.test(res.url))
+      || looksLikeLogin;
+
+    const offers = offersData || []; // valid-but-unparseable 200 => 0 orders, NOT logged out
     // Only count/alarm/quote on orders we haven't already quoted (HAS_QUOTE:1
     // stays in the feed). count = new, actionable orders.
     const actionable = offers.filter(isActionable);
