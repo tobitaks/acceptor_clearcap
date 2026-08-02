@@ -53,6 +53,7 @@ async function playAlarm() {
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'START') {
+    chrome.storage.local.remove('loginAttempts'); // fresh retry window per run
     chrome.tabs.create({ url: DASHBOARD_URL, active: true }, (tab) => {
       // Prevent Chrome memory-saver from discarding the monitored tab
       // (discard kills the content script => monitoring dies silently)
@@ -103,6 +104,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'LOG_QUOTE') {
     logQuote(msg.entry);
   }
+});
+
+// After auto-login, ClearCap may land the monitored tab on a page that is
+// neither the login page nor the broker dashboard. If so, send it back to the
+// dashboard so content.js resumes polling. Scoped strictly to the monitored tab.
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.status !== 'complete') return;
+  chrome.storage.local.get('monitorState', ({ monitorState }) => {
+    if (!monitorState?.monitoring || monitorState.tabId !== tabId) return;
+    chrome.tabs.get(tabId, (tab) => {
+      if (chrome.runtime.lastError || !tab?.url) return;
+      const u = tab.url;
+      if (!u.startsWith('https://secure.clearcapital.com/')) return;
+      const isLogin  = /\/login\.cfm/i.test(u);
+      const isBroker = /\/secure\/broker/i.test(u);
+      if (!isLogin && !isBroker && u !== DASHBOARD_URL) {
+        console.log('[ClearCap bg] post-login off-target — redirecting to dashboard');
+        chrome.tabs.update(tabId, { url: DASHBOARD_URL }, () => void chrome.runtime.lastError);
+      }
+    });
+  });
 });
 
 // If user manually closes the monitored tab, reset state
