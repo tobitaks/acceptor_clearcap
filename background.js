@@ -88,6 +88,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     });
   }
 
+  if (msg.type === 'RELOGIN_NAV') {
+    // Only navigate the monitored tab, and only if the request came FROM it —
+    // a stray broker tab's request is ignored, preserving the login cap.
+    chrome.storage.local.get('monitorState', ({ monitorState }) => {
+      if (monitorState?.monitoring && sender.tab && sender.tab.id === monitorState.tabId) {
+        chrome.tabs.update(
+          monitorState.tabId,
+          { url: 'https://secure.clearcapital.com/login.cfm' },
+          () => void chrome.runtime.lastError
+        );
+      }
+    });
+  }
+
   if (msg.type === 'PLAY_AUDIO_ALERT') {
     console.log('[ClearCap bg] play audio alarm');
     playAlarm();

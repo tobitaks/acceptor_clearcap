@@ -59,7 +59,11 @@ function waitForButton(timeoutMs) {
   }
 
   const btn = await waitForButton(3000);
-  if (!btn) { console.warn('[ClearCap login] no Next/Log in button found'); return; }
+  if (!btn) {
+    console.warn('[ClearCap login] no Next/Log in button found');
+    await chrome.storage.local.set({ monitorState: { ...monitorState, sessionLost: true } });
+    return;
+  }
 
   loginAttempts.push(now);
   await chrome.storage.local.set({ loginAttempts });

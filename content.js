@@ -361,9 +361,12 @@ async function checkOrders() {
       const recent = loginAttempts.filter((t) => Date.now() - t < LOGIN_WINDOW_MS);
       if (recent.length < MAX_LOGIN_ATTEMPTS && !window.__clearcapLoginNav) {
         window.__clearcapLoginNav = true;
-        console.warn('[ClearCap] session lost — navigating to login for auto-login');
-        location.assign('https://secure.clearcapital.com/login.cfm');
-        return; // page is navigating; do not reschedule the poll
+        console.warn('[ClearCap] session lost — requesting auto-login navigation');
+        // Route through the background worker so ONLY the monitored tab navigates
+        // (content.js runs in every broker tab; direct nav in a stray tab would
+        // spawn a second login.js instance and race the loginAttempts cap).
+        chrome.runtime.sendMessage({ type: 'RELOGIN_NAV' });
+        return; // background navigates the monitored tab; stop this poll cycle
       }
       if (Date.now() - lastSessionAlarm > 60000) {
         lastSessionAlarm = Date.now();
