@@ -41,14 +41,30 @@ let normalMs  = NORMAL_DEFAULT_SEC * 1000;  // cached normal interval (from Sett
 let rates     = [];                         // cached rate table (from Settings)
 let dailyLimit = 0;                         // cached daily quote cap (0 = unlimited)
 let monitorStopped = false;                 // set true once the cap stops us
+let monitoring = false;                     // cached monitorState.monitoring — gate: STOP = do nothing
+let loopRunning = false;                    // guards against >1 concurrent poll loop
+
+// Start the poll loop if monitoring is on and it isn't already running. content.js
+// is injected on ANY broker tab, but polling/quoting must ONLY happen while the
+// user has monitoring active (STOP => fully inert, even on a manually-opened tab).
+function startLoop(initialDelayMs) {
+  if (loopRunning || !monitoring || monitorStopped) return;
+  loopRunning = true;
+  setTimeout(checkOrders, initialDelayMs);
+}
 
 // Load + live-update settings (no reload needed).
-chrome.storage.local.get(['normalIntervalSec', 'quoteRates', 'dailyQuoteLimit'], (r) => {
-  const s = parseInt(r.normalIntervalSec, 10);
-  if (s > 0) normalMs = s * 1000;
-  if (Array.isArray(r.quoteRates)) rates = r.quoteRates;
-  dailyLimit = parseInt(r.dailyQuoteLimit, 10) || 0;
-});
+chrome.storage.local.get(
+  ['normalIntervalSec', 'quoteRates', 'dailyQuoteLimit', 'monitorState'],
+  (r) => {
+    const s = parseInt(r.normalIntervalSec, 10);
+    if (s > 0) normalMs = s * 1000;
+    if (Array.isArray(r.quoteRates)) rates = r.quoteRates;
+    dailyLimit = parseInt(r.dailyQuoteLimit, 10) || 0;
+    monitoring = !!r.monitorState?.monitoring;
+    startLoop(1500); // begins only if monitoring is on
+  }
+);
 chrome.storage.onChanged.addListener((changes) => {
   if (changes.normalIntervalSec) {
     const s = parseInt(changes.normalIntervalSec.newValue, 10);
@@ -59,6 +75,11 @@ chrome.storage.onChanged.addListener((changes) => {
   }
   if (changes.dailyQuoteLimit) {
     dailyLimit = parseInt(changes.dailyQuoteLimit.newValue, 10) || 0;
+  }
+  if (changes.monitorState) {
+    monitoring = !!changes.monitorState.newValue?.monitoring;
+    if (monitoring) startLoop(0);   // START (or a manual tab that's already the monitored one)
+    // STOP: monitoring=false — the running loop self-terminates on its next checkOrders.
   }
 });
 
@@ -295,8 +316,10 @@ function extensionAlive() {
 }
 
 async function checkOrders() {
-  if (monitorStopped) return; // daily quote cap hit — tab is being closed
+  if (!monitoring) { loopRunning = false; return; } // STOP => do nothing (gate)
+  if (monitorStopped) { loopRunning = false; return; } // daily quote cap hit — tab is being closed
   if (!extensionAlive()) {
+    loopRunning = false;
     console.warn('[ClearCap] extension reloaded — stopping. Refresh page to resume.');
     return;
   }
@@ -366,6 +389,12 @@ async function checkOrders() {
         // (content.js runs in every broker tab; direct nav in a stray tab would
         // spawn a second login.js instance and race the loginAttempts cap).
         chrome.runtime.sendMessage({ type: 'RELOGIN_NAV' });
+        // Reset loopRunning so this exit doesn't leave the loop wedged. The
+        // monitored tab is about to be navigated away (module torn down anyway);
+        // a stray non-monitored tab won't be navigated by background, so without
+        // this it would get stuck loopRunning=true and never restart on a later
+        // monitorState change.
+        loopRunning = false;
         return; // background navigates the monitored tab; stop this poll cycle
       }
       if (Date.now() - lastSessionAlarm > 60000) {
@@ -414,4 +443,6 @@ async function checkOrders() {
   setTimeout(checkOrders, pollInterval());
 }
 
-setTimeout(checkOrders, 1500);
+// Loop is started by startLoop() from the storage read / monitorState change —
+// gated on monitoring so a STOP'd extension (or a manually-opened broker tab
+// while stopped) never polls or quotes.
