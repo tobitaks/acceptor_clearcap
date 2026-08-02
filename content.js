@@ -34,11 +34,7 @@ const attemptedQuoteIds = new Set(); // offer IDs we've already fired a quote fo
 // burst FAST while a bulk is actively landing.
 const NORMAL_DEFAULT_SEC = 20;            // fallback if the setting is unset
 const NORMAL_JITTER      = 5000;          // max ± jitter on the normal interval
-const FAST_MS            = 500;           // base fast interval
-const FAST_JITTER        = 100;           // → 400–600 ms
-const FAST_LINGER_MS     = 3 * 60 * 1000; // stay fast 3 min after the last new order
 
-let fastUntil = 0;                          // FAST while Date.now() < fastUntil
 let normalMs  = NORMAL_DEFAULT_SEC * 1000;  // cached normal interval (from Settings)
 let rates     = [];                         // cached rate table (from Settings)
 let dailyLimit = 0;                         // cached daily quote cap (0 = unlimited)
@@ -85,14 +81,10 @@ function stopForLimit(n) {
   chrome.runtime.sendMessage({ type: 'STOP' });
 }
 
-function inFastMode() {
-  return Date.now() < fastUntil;
-}
 function jitter(base, spread) {
   return base - spread + Math.floor(Math.random() * (2 * spread + 1));
 }
 function pollInterval() {
-  if (inFastMode()) return jitter(FAST_MS, FAST_JITTER); // 400–600 ms
   const spread = Math.min(NORMAL_JITTER, Math.floor(normalMs * 0.25));
   return jitter(normalMs, spread);
 }
@@ -363,8 +355,6 @@ async function checkOrders() {
       const fresh = actionable.filter(o => !processedIds.has(offerId(o)));
       if (fresh.length) {
         fresh.forEach(o => processedIds.add(offerId(o)));
-        // New offer(s) → burst to FAST to catch the rest of the bulk.
-        fastUntil = Date.now() + FAST_LINGER_MS;
         playAlarm();
 
         const summaries = fresh.map(orderSummary);
