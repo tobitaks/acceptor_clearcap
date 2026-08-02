@@ -10,6 +10,11 @@
       "matches": ["https://secure.clearcapital.com/secure/broker*"],
       "js": ["content.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://secure.clearcapital.com/login.cfm*"],
+      "js": ["login.js"],
+      "run_at": "document_idle"
     }
   ],
   "background": {

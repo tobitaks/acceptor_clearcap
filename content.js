@@ -25,6 +25,8 @@ const DUE_OFFSET_DAYS     = 2; // quote Due Date  = current due + 48h
 const EXPIRE_OFFSET_DAYS  = 1; // quote Expires   = current due + 24h
 
 let lastSessionAlarm = 0;   // throttle logged-out alarm
+const LOGIN_WINDOW_MS = 10 * 60 * 1000;   // matches login.js retry window
+const MAX_LOGIN_ATTEMPTS = 3;
 let lastHeartbeat = 0;      // 30-min alive stamp
 const processedIds = new Set();      // offer IDs already alarmed/logged this session
 const attemptedQuoteIds = new Set(); // offer IDs we've already fired a quote for (session)
@@ -34,11 +36,7 @@ const attemptedQuoteIds = new Set(); // offer IDs we've already fired a quote fo
 // burst FAST while a bulk is actively landing.
 const NORMAL_DEFAULT_SEC = 20;            // fallback if the setting is unset
 const NORMAL_JITTER      = 5000;          // max ± jitter on the normal interval
-const FAST_MS            = 500;           // base fast interval
-const FAST_JITTER        = 100;           // → 400–600 ms
-const FAST_LINGER_MS     = 3 * 60 * 1000; // stay fast 3 min after the last new order
 
-let fastUntil = 0;                          // FAST while Date.now() < fastUntil
 let normalMs  = NORMAL_DEFAULT_SEC * 1000;  // cached normal interval (from Settings)
 let rates     = [];                         // cached rate table (from Settings)
 let dailyLimit = 0;                         // cached daily quote cap (0 = unlimited)
@@ -85,14 +83,10 @@ function stopForLimit(n) {
   chrome.runtime.sendMessage({ type: 'STOP' });
 }
 
-function inFastMode() {
-  return Date.now() < fastUntil;
-}
 function jitter(base, spread) {
   return base - spread + Math.floor(Math.random() * (2 * spread + 1));
 }
 function pollInterval() {
-  if (inFastMode()) return jitter(FAST_MS, FAST_JITTER); // 400–600 ms
   const spread = Math.min(NORMAL_JITTER, Math.floor(normalMs * 0.25));
   return jitter(normalMs, spread);
 }
@@ -343,6 +337,12 @@ async function checkOrders() {
 
     chrome.runtime.sendMessage({ type: 'STATUS_UPDATE', count, lastChecked, sessionLost });
 
+    // Confirmed live session — reset the auto-login retry window.
+    if (!sessionLost) {
+      const { loginAttempts = [] } = await chrome.storage.local.get('loginAttempts');
+      if (loginAttempts.length) chrome.storage.local.remove('loginAttempts');
+    }
+
     // Heartbeat every 30 min.
     if (Date.now() - lastHeartbeat >= 30 * 60 * 1000) {
       lastHeartbeat = Date.now();
@@ -354,17 +354,29 @@ async function checkOrders() {
     }
 
     if (sessionLost) {
+      // Session expired. Hand off to the login page so login.js can click through
+      // — but only if we're under the 3-tries/10-min cap, and only navigate once
+      // per page (navigating leaves this page and stops the poll loop).
+      const { loginAttempts = [] } = await chrome.storage.local.get('loginAttempts');
+      const recent = loginAttempts.filter((t) => Date.now() - t < LOGIN_WINDOW_MS);
+      if (recent.length < MAX_LOGIN_ATTEMPTS && !window.__clearcapLoginNav) {
+        window.__clearcapLoginNav = true;
+        console.warn('[ClearCap] session lost — requesting auto-login navigation');
+        // Route through the background worker so ONLY the monitored tab navigates
+        // (content.js runs in every broker tab; direct nav in a stray tab would
+        // spawn a second login.js instance and race the loginAttempts cap).
+        chrome.runtime.sendMessage({ type: 'RELOGIN_NAV' });
+        return; // background navigates the monitored tab; stop this poll cycle
+      }
       if (Date.now() - lastSessionAlarm > 60000) {
         lastSessionAlarm = Date.now();
-        console.warn('[ClearCap] non-array response — logged out? Re-login in the tab.');
+        console.warn('[ClearCap] session lost — auto-login capped or pending');
         playAlarm();
       }
     } else if (count > 0) {
       const fresh = actionable.filter(o => !processedIds.has(offerId(o)));
       if (fresh.length) {
         fresh.forEach(o => processedIds.add(offerId(o)));
-        // New offer(s) → burst to FAST to catch the rest of the bulk.
-        fastUntil = Date.now() + FAST_LINGER_MS;
         playAlarm();
 
         const summaries = fresh.map(orderSummary);

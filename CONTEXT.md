@@ -113,10 +113,10 @@ Quote Expires = **+1 day**, keeping the same clock time string — so no timezon
 
 ## Adaptive polling (anti-detection)
 
-Volume-based bans (ValueLink-style) count requests/day. Poll SLOW by default,
-burst FAST while a bulk lands:
-- **Normal** = `normalIntervalSec` (Settings, default 20s, min 5), jittered, live-updates.
-- **Fast** = ~0.5s for 3 min after a new order, then falls back.
+Volume-based bans (ValueLink-style) count requests/day. Poll at a fixed,
+jittered interval — `normalIntervalSec` (Settings, default 20s, min 5),
+live-updates. ClearCap is **not** a first-to-accept race (orders stay Available
+1–2h), so there is no fast-burst mode. Typical operating cadence: 600s (10 min).
 
 ## Daily quote limit
 
@@ -130,6 +130,24 @@ sends `STOP` → background closes the monitored tab → polling stops.
 If `getAvailableOffers` returns a non-array (login redirect / HTML), that's treated
 as **session lost** → alarm (throttled 60s) + popup shows a red warning.
 
+## Auto-login (session recovery)
+
+When monitoring is active and the session expires, the bot re-logs-in itself
+(credentials assumed pre-filled by the browser):
+
+- `content.js` detects `sessionLost` → navigates the monitored tab to
+  `login.cfm` (covers the case where only the fetch sees login-HTML but the tab
+  stayed on the broker page).
+- `login.js` (content script on `login.cfm*`) clicks the visible `Next` /
+  `Log in` button (text match `/^(log\s*in|next)\b/i`). It fires once per page
+  load, so the two-step flow (Username→Next, Password→Log in) walks itself.
+- **Cap:** max 3 clicks per rolling 10-min window (`loginAttempts`). On the 4th,
+  it gives up, flags `sessionLost` (popup shows red), keeps polling. No lockout
+  spiral. Gated to `monitorState.monitoring` — a deliberate manual logout is
+  left alone.
+- After login, `background.js` redirects the monitored tab to the dashboard if
+  ClearCap dropped it off-target. First good poll clears `loginAttempts`.
+
 ## Storage keys
 
 - `quoteRates` — `[{city, zip, ext, int}]`
@@ -139,6 +157,7 @@ as **session lost** → alarm (throttled 60s) + popup shows a red warning.
 - `detectionLog` — `[{count, orders, timestamp}]` (cap 100)
 - `monitorState` — `{monitoring, tabId, count, lastChecked, sessionLost}`
 - `heartbeatLog` — alive stamps (cap 20)
+- `loginAttempts` — `[timestamp_ms]`, rolling 10-min window (auto-login retry cap, max 3)
 
 Outcomes: `quoted` (pending) · `failed` · `unpriced` (skipped, no/blank rate).
 
