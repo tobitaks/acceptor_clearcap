@@ -389,6 +389,12 @@ async function checkOrders() {
         // (content.js runs in every broker tab; direct nav in a stray tab would
         // spawn a second login.js instance and race the loginAttempts cap).
         chrome.runtime.sendMessage({ type: 'RELOGIN_NAV' });
+        // Reset loopRunning so this exit doesn't leave the loop wedged. The
+        // monitored tab is about to be navigated away (module torn down anyway);
+        // a stray non-monitored tab won't be navigated by background, so without
+        // this it would get stuck loopRunning=true and never restart on a later
+        // monitorState change.
+        loopRunning = false;
         return; // background navigates the monitored tab; stop this poll cycle
       }
       if (Date.now() - lastSessionAlarm > 60000) {
