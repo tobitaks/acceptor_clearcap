@@ -25,6 +25,8 @@ const DUE_OFFSET_DAYS     = 2; // quote Due Date  = current due + 48h
 const EXPIRE_OFFSET_DAYS  = 1; // quote Expires   = current due + 24h
 
 let lastSessionAlarm = 0;   // throttle logged-out alarm
+const LOGIN_WINDOW_MS = 10 * 60 * 1000;   // matches login.js retry window
+const MAX_LOGIN_ATTEMPTS = 3;
 let lastHeartbeat = 0;      // 30-min alive stamp
 const processedIds = new Set();      // offer IDs already alarmed/logged this session
 const attemptedQuoteIds = new Set(); // offer IDs we've already fired a quote for (session)
@@ -335,6 +337,12 @@ async function checkOrders() {
 
     chrome.runtime.sendMessage({ type: 'STATUS_UPDATE', count, lastChecked, sessionLost });
 
+    // Confirmed live session — reset the auto-login retry window.
+    if (!sessionLost) {
+      const { loginAttempts = [] } = await chrome.storage.local.get('loginAttempts');
+      if (loginAttempts.length) chrome.storage.local.remove('loginAttempts');
+    }
+
     // Heartbeat every 30 min.
     if (Date.now() - lastHeartbeat >= 30 * 60 * 1000) {
       lastHeartbeat = Date.now();
@@ -346,9 +354,20 @@ async function checkOrders() {
     }
 
     if (sessionLost) {
+      // Session expired. Hand off to the login page so login.js can click through
+      // — but only if we're under the 3-tries/10-min cap, and only navigate once
+      // per page (navigating leaves this page and stops the poll loop).
+      const { loginAttempts = [] } = await chrome.storage.local.get('loginAttempts');
+      const recent = loginAttempts.filter((t) => Date.now() - t < LOGIN_WINDOW_MS);
+      if (recent.length < MAX_LOGIN_ATTEMPTS && !window.__clearcapLoginNav) {
+        window.__clearcapLoginNav = true;
+        console.warn('[ClearCap] session lost — navigating to login for auto-login');
+        location.assign('https://secure.clearcapital.com/login.cfm');
+        return; // page is navigating; do not reschedule the poll
+      }
       if (Date.now() - lastSessionAlarm > 60000) {
         lastSessionAlarm = Date.now();
-        console.warn('[ClearCap] non-array response — logged out? Re-login in the tab.');
+        console.warn('[ClearCap] session lost — auto-login capped or pending');
         playAlarm();
       }
     } else if (count > 0) {
